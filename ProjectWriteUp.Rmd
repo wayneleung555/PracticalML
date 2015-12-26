@@ -1,0 +1,122 @@
+---
+title: "__Practical Machine Learning Project__"
+output: html_document
+---
+
+#### by Wayne Leung
+#### 25 December 2015
+
+### __Introduction__
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it.
+
+
+
+In this project, the goal is to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants to predict the manner they did the exercise. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. Namely 
+
+- Class A : exactly according to the specification
+- Class B : throwing the elbows to the front 
+- Class C : lifting the dumbbell only halfway 
+- Class D : lowering the dumbbell only halfway
+- Class E : throwing the hips to the front
+ 
+In other words, dependent variables are Class A to Class E. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). 
+
+
+ 
+### __Data Processing__
+ 
+```{r, echo=FALSE } 
+setwd("C:/data/Coursera/DataScience/PracticalMachineLearning/project") 
+``` 
+
+```{r, message = FALSE} 
+# load packages
+library(caret)
+library(randomForest)
+library(corrplot)
+```
+ 
+```{r}
+# download the CSV file from the web location and read in to R dataset
+rm(list = ls())
+if (!file.exists("pml-training.csv")) {
+        download.file("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", destfile = "pml-training.csv")
+}
+if (!file.exists("pml-testing.csv")) {
+        download.file("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", destfile = "pml-testing.csv")
+}
+trainRaw <- read.csv("pml-training.csv", na.strings = c("NA", ""))
+testRaw  <- read.csv("pml-testing.csv", na.strings = c("NA", ""))
+```
+
+
+```{r, results ='hide'}
+str(trainRaw)                   # 19622 obs. of  160 variables
+sum(complete.cases(trainRaw))   # 406 complete cases
+```
+
+
+Remove columns that all values are missing 
+```{r, results ='hide'}
+trainRaw <- trainRaw[, colSums(is.na(trainRaw)) == 0] 
+testRaw <- testRaw[, colSums(is.na(testRaw)) == 0] 
+```
+
+
+Remove first 7 columns since they are obviously not relevant in predicting Class. They are timestamps, names and windows variables. There are 53 variables remaining in both trainData and testData. 19622 obs in trainData and 20 obs in testData. The dependent variable is classe.
+```{r, results ='hide'}
+trainingData <- trainRaw[, -c(1:7)]           
+testData <- testRaw[, -c(1:7)]
+```
+
+
+### __Slicing the Data__
+For the purpose of cross validation, split the train data set into a 70% of pure train and 30% of validation data set.
+```{r, results ='hide'}
+set.seed(666) # For reproducibile purpose
+inTrain <- createDataPartition(trainingData$classe, p=0.7, list=FALSE)
+trainData <- trainingData[inTrain, ]
+validateData  <- trainingData[-inTrain, ]
+```
+
+
+### __Prediction Model__
+Random forest is accurate can handle large number of predictors without variable deletion. It also provide list of variable importance to indicate the relative predictive power of the independent variables. It is robust to correlated covariates and outliers. 
+
+As cross validation provides a more accurate result by averageing several models, we use 5 folds validation to apply the random forest algorithm. 
+
+```{r}
+rf.fit <-train(classe ~ ., data=trainData, method="rf", trControl= trainControl(method="cv", 5), ntree=250)
+print(rf.fit)
+```
+
+### __Results from Fitting Random Forest__
+Top 20 predictors by variable importance are as below 
+```{r}
+varImp(rf.fit,scale = FALSE)
+varImpPlot(rf.fit$finalModel, scale = FALSE, n.var=20, main = "Variable Importance (Gini) for Top 20 Preditors")
+```
+
+### __Confusion Matrix on Validate Data__
+```{r}
+predict.rf <- predict(rf.fit, validateData)
+conf.matrix <- confusionMatrix(validateData$classe, predict.rf)
+print(conf.matrix)
+```
+```{r}
+accuracy <- conf.matrix$overall[1]
+Out.of.sample.Error <- 1 - accuracy
+print(accuracy)
+print(Out.of.sample.Error)
+```
+
+Using random forest, estimated accuracy rate is 99.3% and estimated out-of-sample error rate is 0.7%.
+
+### __Prediction on Test Data__
+Now, use the random forest model to predict the dependent variable classe for the test dataset.
+```{r}
+predict(rf.fit, testData)
+```
+
+
